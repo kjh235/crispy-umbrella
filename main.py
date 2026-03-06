@@ -35,8 +35,8 @@ def main() -> None:
     engine = USPSLookup()
 
     if args.l012:
-        n = engine.load_l012(args.l012)
-        print(f"Loaded {n} L012 records.", file=sys.stderr)
+        groups, zips = engine.load_l012(args.l012)
+        print(f"Loaded {groups} L012 groups ({zips} member ZIPs).", file=sys.stderr)
 
     if args.l606:
         n = engine.load_l606(args.l606, active_only=not args.include_expired)

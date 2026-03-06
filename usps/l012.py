@@ -1,9 +1,10 @@
 """
 Parser for USPS L012 labeling list (plain-text table format).
 
-L012 maps groups of originating ZIP codes (Column A) to a single "label to"
-destination (Column B: city, state, representative ZIP).  Entries alternate:
-Column-A block, Column-B block, Column-A block, …, separated by blank lines.
+L012 defines dispatch *groups*: all ZIP codes listed in Column A are
+consolidated together and sent as a single group to the Column B destination.
+The group is the fundamental unit — individual ZIPs within a group are not
+dispatched independently.
 
 Column A tokens may be:
   - Individual ZIPs: "00601"
@@ -16,17 +17,23 @@ Column B format: "<CITY> <STATE> <ZIP>"  (last two tokens = state + ZIP)
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
 
 
 @dataclass(slots=True)
-class L012Record:
-    member_zip: str   # originating ZIP (Column A member)
-    dest_zip: str     # representative destination ZIP (Column B)
-    dest_city: str    # destination city (Column B, uppercased)
-    dest_state: str   # destination state (Column B, 2-char)
+class L012Group:
+    """One Column-A / Column-B entry from L012.
+
+    All ZIPs in *member_zips* are consolidated together and dispatched as a
+    single group to the destination identified by *dest_city*, *dest_state*,
+    and *dest_zip*.
+    """
+    member_zips: list[str]   # all originating ZIPs in this group (expanded)
+    dest_zip: str            # representative destination ZIP (Column B)
+    dest_city: str           # destination city (uppercased)
+    dest_state: str          # destination state abbreviation (2-char)
 
 
 def _expand_range(token: str) -> list[str]:
@@ -70,8 +77,8 @@ def _blocks(path: Path) -> list[str]:
     return [b for b in blocks if b]
 
 
-def parse_file(path: str | Path) -> Iterator[L012Record]:
-    """Yield one L012Record per member ZIP found in the file."""
+def parse_file(path: str | Path) -> Iterator[L012Group]:
+    """Yield one L012Group per Column-A/Column-B pair in the file."""
     path = Path(path)
     blocks = _blocks(path)
     # Blocks strictly alternate: col-A (ZIP list), col-B (city state ZIP).
@@ -94,18 +101,14 @@ def parse_file(path: str | Path) -> Iterator[L012Record]:
         else:
             i += 1
 
-    # Also handle the last block if it's a col-A without a col-B
-    # (malformed file edge case — skip it silently)
-
     for col_a_text, col_b_text in pairs:
         try:
             dest_city, dest_state, dest_zip = _parse_col_b(col_b_text)
         except ValueError:
             continue
-        for member_zip in _expand_col_a(col_a_text):
-            yield L012Record(
-                member_zip=member_zip,
-                dest_zip=dest_zip,
-                dest_city=dest_city,
-                dest_state=dest_state,
-            )
+        yield L012Group(
+            member_zips=_expand_col_a(col_a_text),
+            dest_zip=dest_zip,
+            dest_city=dest_city,
+            dest_state=dest_state,
+        )
