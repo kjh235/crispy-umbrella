@@ -3,7 +3,10 @@
 USPS ZIP-to-facility lookup CLI.
 
 Usage:
-    python main.py --l606 data/l606.txt --facilities data/facilities.tsv 00603 00612 00680
+    python main.py --l012 data/l012_sample.txt \\
+                   --l606 data/l606_sample.txt \\
+                   --facilities data/facilities_sample.tsv \\
+                   00601 00716 00968
 """
 
 import argparse
@@ -14,27 +17,41 @@ from usps.lookup import USPSLookup
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Look up a USPS facility by ZIP code.")
-    parser.add_argument("--l606", required=True, metavar="FILE",
-                        help="Path to the L606 pipe-delimited labeling list file")
-    parser.add_argument("--facilities", required=True, metavar="FILE",
-                        help="Path to the FAST facility tab-delimited file")
-    parser.add_argument("--all", action="store_true",
+    parser.add_argument("--l012", metavar="FILE",
+                        help="L012 plain-text labeling list (general routing)")
+    parser.add_argument("--l606", metavar="FILE",
+                        help="L606 pipe-delimited SCF scheme labeling list")
+    parser.add_argument("--facilities", metavar="FILE",
+                        help="FAST facility tab-delimited export")
+    parser.add_argument("--include-expired", action="store_true",
                         help="Include expired L606 records")
     parser.add_argument("zips", nargs="+", metavar="ZIP",
-                        help="One or more 5-digit ZIP codes to look up")
+                        help="5-digit ZIP codes to look up")
     args = parser.parse_args()
+
+    if not args.l012 and not args.l606:
+        parser.error("At least one of --l012 or --l606 is required.")
 
     engine = USPSLookup()
 
-    l606_count = engine.load_l606(args.l606, active_only=not args.all)
-    fac_count = engine.load_facilities(args.facilities)
-    print(f"Loaded {l606_count} L606 records, {fac_count} facilities.\n",
-          file=sys.stderr)
+    if args.l012:
+        n = engine.load_l012(args.l012)
+        print(f"Loaded {n} L012 records.", file=sys.stderr)
+
+    if args.l606:
+        n = engine.load_l606(args.l606, active_only=not args.include_expired)
+        print(f"Loaded {n} L606 records.", file=sys.stderr)
+
+    if args.facilities:
+        n = engine.load_facilities(args.facilities)
+        print(f"Loaded {n} facilities.", file=sys.stderr)
+
+    print(file=sys.stderr)
 
     for zip_code in args.zips:
         result = engine.lookup(zip_code)
         if result is None:
-            print(f"ZIP {zip_code}: not found in L606 routing table.")
+            print(f"ZIP {zip_code}: not found in any routing table.")
         else:
             print(result)
         print()
